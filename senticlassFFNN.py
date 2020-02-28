@@ -1,3 +1,18 @@
+'''
+Author: Giridhar R, Haritha G
+Description: AIT 726 Homework 2
+Command to run the file:
+(python senticlassFFNN.py [train folder location] [test folder location] )
+
+Detailed Procedure:
+
+Start:
+getdata()
+cleandata()
+vectorize()
+
+
+'''
 import pandas as pd
 from collections import defaultdict
 from pathlib import Path
@@ -99,6 +114,9 @@ def clean(df):
                 lowerlist.append(word)
         return lowerlist
 
+    #removing stop words
+    #def stopwords(text):
+
     cleantweet= []
     for doc in df.text:
         cleantweet.append(cleantweettext(doc))
@@ -163,34 +181,154 @@ def dummy_fun(doc):
 
 def getrep(df, rep):
     if rep == 'binary':
-        vectorizer = CountVectorizer(binary = True, analyzer='word', tokenizer=dummy_fun, preprocessor=dummy_fun, token_pattern=None)  
-    elif rep == 'freq': #for freq
+        vectorizer = CountVectorizer(binary = True, analyzer='word', tokenizer=dummy_fun, preprocessor=dummy_fun, token_pattern=None)
+        text = df.text
+        vectorizer.fit(text)
+        freqVocab = vectorizer.vocabulary_
+        train_vector = vectorizer.transform(text)
+        #Create bigdoc that contains words in V, their corresponding frequencies for each class
+
+        #1.Transform pos and neg tweets into seprate vectors
+        train_pos_vector1 = vectorizer.transform(df[df['Sentiment']==1]['text'])
+        train_neg_vector1 = vectorizer.transform(df[df['Sentiment']==0]['text'])
+
+        #2. column sum of vectors(word per column)
+        sum_pos = train_pos_vector1.sum(axis = 0)
+        sum_neg = train_neg_vector1.sum(axis = 0)
+
+        #3. Initialize bigdoc as a dataframe
+        bigdoc = pd.DataFrame(index = list(set(freqVocab.keys())), columns = ['pos', 'neg'])
+
+        #4. get the corresponding frequency from the above matrx and set it to bigdoc
+        for word in freqVocab.keys():
+            index = freqVocab.get(word)
+            bigdoc.at[word, 'pos'] = sum_pos[:, index].item()
+            bigdoc.at[word, 'neg'] = sum_neg[:, index].item()
+        return bigdoc, freqVocab, train_vector, vectorizer
+
+    elif rep == 'freq': #for frequency representation
+
         vectorizer = CountVectorizer(analyzer='word', tokenizer=dummy_fun, preprocessor=dummy_fun, token_pattern=None)          
-    elif rep == 'tfidf':
-        vectorizer = TfidfVectorizer(analyzer='word', tokenizer=dummy_fun, preprocessor=dummy_fun, token_pattern=None)
-    text = df.text
-    vectorizer.fit(text)
-    freqVocab = vectorizer.vocabulary_
-    train_vector = vectorizer.transform(text)
-    #Create bigdoc that contains words in V, their corresponding frequencies for each class
+        text = df.text
+        vectorizer.fit(text)
+        freqVocab = vectorizer.vocabulary_
+        train_vector = vectorizer.transform(text)
+        #Create bigdoc that contains words in V, their corresponding frequencies for each class
 
-    #1.Transform pos and neg tweets into seprate vectors
-    train_pos_vector1 = vectorizer.transform(df[df['Sentiment']==1]['text'])
-    train_neg_vector1 = vectorizer.transform(df[df['Sentiment']==0]['text'])
+        #1.Transform pos and neg tweets into seprate vectors
+        train_pos_vector1 = vectorizer.transform(df[df['Sentiment']==1]['text'])
+        train_neg_vector1 = vectorizer.transform(df[df['Sentiment']==0]['text'])
 
-    #2. column sum of vectors(word per column)
-    sum_pos = train_pos_vector1.sum(axis = 0)
-    sum_neg = train_neg_vector1.sum(axis = 0)
+        #2. column sum of vectors(word per column)
+        sum_pos = train_pos_vector1.sum(axis = 0)
+        sum_neg = train_neg_vector1.sum(axis = 0)
 
-    #3. Initialize bigdoc as a dataframe
-    bigdoc = pd.DataFrame(index = list(set(freqVocab.keys())), columns = ['pos', 'neg'])
+        #3. Initialize bigdoc as a dataframe
+        bigdoc = pd.DataFrame(index = list(set(freqVocab.keys())), columns = ['pos', 'neg'])
 
-    #4. get the corresponding frequency from the above matrx and set it to bigdoc
-    for word in freqVocab.keys():
-        index = freqVocab.get(word)
-        bigdoc.at[word, 'pos'] = sum_pos[:, index].item()
-        bigdoc.at[word, 'neg'] = sum_neg[:, index].item()
-#here
-    #print("length of vocab: ")
-    #print(len(freqVocab))
-    return bigdoc, freqVocab, train_vector, vectorizer
+        #4. get the corresponding frequency from the above matrx and set it to bigdoc
+        for word in freqVocab.keys():
+            index = freqVocab.get(word)
+            bigdoc.at[word, 'pos'] = sum_pos[:, index].item()
+            bigdoc.at[word, 'neg'] = sum_neg[:, index].item()
+
+        return bigdoc, freqVocab, train_vector, vectorizer
+
+    elif rep == 'tfidf': #TF IDF Representation
+        #create TF IDF vector using NLTK
+        freqdict={}
+        #compute term frequency
+        for tweet in df.text:
+            tf={}
+            for word in tweet:
+                if word in tf:
+                    tf[word]+=1
+                else:
+                    tf[word]= 1
+        freqdict[" ".join(tweet)[:15]]= tf
+
+        #compute inverse document frequency
+        N= len(df) # total number of documents
+        # compute number of documents with a word w
+        invdocufreq={}
+
+        def createvocab(df):
+            V=[]
+            for tweet in df.text:
+                for keyword in tweet:
+                    if keyword  in V:
+                        continue
+                    else :
+                        V.append(keyword)
+            return V
+
+        def wordintweet(text,keyword):
+            for words in text:
+                if word == keyword:
+                    return 1
+                else:
+                    return 0
+        Vocab = createvocab(df)
+        Vocab= sorted(Vocab)
+        docufreq= {el:0 for el in Vocab}
+        invdocufreq= {el:0 for el in Vocab}
+
+        for word in Vocab:
+            for tweet in df.text:
+                if wordintweet(tweet, word) == 1:
+                    docufreq[word]+=1
+
+        for word in  docufreq:
+            invdocufreq[word]= math.log(N/docufreq[word],10)
+
+        # create TF- IDF matrix from TF dictionary and IDF dictionary
+        TFIDF_dataframe = pd.DataFrame(0,index= list(set(freqdict.keys())),columns= Vocab)
+
+        print(TFIDF_dataframe.shape)
+
+        for wid,info in freqvector.items:
+            for keyword in info:
+                if word== keyword:
+                    TFIDF_dataframe.at[wid,keyword]= info[keyword]* invdocufreq[keyword]
+
+        TFIDFmatrix =  np.zeros(len(df),len(Vocab)) #initialize
+        TFIDFmatrix= TFIDF_dataframe.values
+
+        return TFIDF_dataframe,Vocab,TFIDFmatrix,NULL
+    
+
+
+def main():
+
+    # print command line arguments
+    train= get_data(sys.argv[1])
+    test= get_data(sys.argv[2])
+    
+    print("cleaning data")
+    clean_train_stem,clean_train_nostem= clean(train)
+    clean_test_stem, clean_test_nostem= clean(test)
+    print("cleaning done")
+    print(clean_train_stem.head(5))
+    print(clean_train_nostem.head(5))
+    
+    print("create vectors")
+    traindf_stem_tfidf, stem_vocab_tf, trainvector_stem_tfidf, ts_vectorizer= getrep(clean_train_stem, 'tfidf')
+    traindf_nostem_tfidf, stem_vocab_tf, trainvector_nostem_tfidf, tn_vectorizer= getrep(clean_train_stem, 'tfidf')
+
+            
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+
+
+
+
+
+
+
+
