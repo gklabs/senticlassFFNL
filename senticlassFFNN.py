@@ -31,6 +31,7 @@ from sklearn.metrics import accuracy_score
 import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
+from itertools import islice
 
 #nl.download('punkt')
 
@@ -79,7 +80,7 @@ def get_data(path):
     df = df.sample(frac=1).reset_index(drop=True)
 
     # explore top 5 rows
-    df.head(5)
+    #df.head(5)
     return df
 
 def clean(df):
@@ -245,7 +246,7 @@ def getrep(df, rep):
                     tf[word]+=1
                 else:
                     tf[word]= 1
-        freqdict[" ".join(tweet)[:15]]= tf
+            freqdict[" ".join(tweet)[:15]]= tf
 
         #compute inverse document frequency
         N= len(df) # total number of documents
@@ -263,11 +264,11 @@ def getrep(df, rep):
             return V
 
         def wordintweet(text,keyword):
-            for words in text:
+            for word in text:
                 if word == keyword:
                     return 1
-                else:
-                    return 0
+            return 0
+        
         Vocab = createvocab(df)
         Vocab= sorted(Vocab)
         docufreq= {el:0 for el in Vocab}
@@ -281,20 +282,29 @@ def getrep(df, rep):
         for word in  docufreq:
             invdocufreq[word]= math.log(N/docufreq[word],10)
 
-        # create TF- IDF matrix from TF dictionary and IDF dictionary
+        
+        sorted_x = dict(sorted(docufreq.items(), key=lambda kv: kv[1], reverse = True))
+        print("20 Highest occuring elements from document frequency matrix ")
+        print(list(islice(sorted_x.items(), 20)))
+        sorted_x = dict(sorted(invdocufreq.items(), key=lambda kv: kv[1], reverse = True))
+        print("20 Highest value elements from inverse document frequency matrix ")
+        print(list(islice(sorted_x.items(), 20)))
         TFIDF_dataframe = pd.DataFrame(0,index= list(set(freqdict.keys())),columns= Vocab)
 
         print(TFIDF_dataframe.shape)
+        
+        #print(freqdict)
 
-        for wid,info in freqvector.items:
+        for wid,info in freqdict.items():
             for keyword in info:
                 if word== keyword:
                     TFIDF_dataframe.at[wid,keyword]= info[keyword]* invdocufreq[keyword]
 
-        TFIDFmatrix =  np.zeros(len(df),len(Vocab)) #initialize
-        TFIDFmatrix= TFIDF_dataframe.values
 
-        return TFIDF_dataframe,Vocab,TFIDFmatrix,NULL
+        #TFIDFmatrix =  np.zeros(len(df),len(Vocab)) #initialize
+        TFIDFmatrix= TFIDF_dataframe.values
+        print(TFIDFmatrix)
+        return TFIDF_dataframe,Vocab,TFIDFmatrix, None
     
 
 
@@ -308,12 +318,12 @@ def main():
     clean_train_stem,clean_train_nostem= clean(train)
     clean_test_stem, clean_test_nostem= clean(test)
     print("cleaning done")
-    print(clean_train_stem.head(5))
-    print(clean_train_nostem.head(5))
+    #print(clean_train_stem.head(5))
+    #print(clean_train_nostem.head(5))
     
     print("create vectors")
     traindf_stem_tfidf, stem_vocab_tf, trainvector_stem_tfidf, ts_vectorizer= getrep(clean_train_stem, 'tfidf')
-    traindf_nostem_tfidf, stem_vocab_tf, trainvector_nostem_tfidf, tn_vectorizer= getrep(clean_train_stem, 'tfidf')
+    traindf_nostem_tfidf, stem_vocab_tf, trainvector_nostem_tfidf, tn_vectorizer= getrep(clean_train_nostem, 'tfidf')
 
             
 
