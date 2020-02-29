@@ -32,6 +32,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from itertools import islice
+from nltk.corpus import stopwords
 
 #nl.download('punkt')
 
@@ -114,31 +115,46 @@ def clean(df):
             else:
                 lowerlist.append(word)
         return lowerlist
-
-    #removing stop words
-    #def stopwords(text):
-
+    
+    def removedstopwords(tweettokens):
+        return [word for word in tweettokens if word not in stopwords.words('english')]
+    
+    #remove the urls. This step is done as they are scored high by TFIDF due to their infrequency
+    def removeUrls(tweettokens):
+        newtweettokentext = []
+        for token in tweettokens:
+            if not re.compile(r'^[//t.co/]').search(token):
+                newtweettokentext.append(token)
+        return newtweettokentext
+        
+    #lisss = ['bday', 'yesterday', 'girl', 'gave', 'birth', 'first', 'born', 'i', '-D', '.', ',', '!', '//t.co/3KhGjoFgpX']   
+    #removeUrls(lisss) 
+    
     cleantweet= []
     for doc in df.text:
         cleantweet.append(cleantweettext(doc))
-
-
-    tokentweet=[]
     df.text= cleantweet
+    #print('CLEAN TWEET ******** ', df.text)
+
+    tokentweet=[]    
     for doc in df.text:
         tokentweet.append(TweetTokenizer().tokenize(doc))
     df.text= tokentweet
-
+    #print('EMOJI TOKENIZE ******* ',df.text)
+    
     removeattweet=[]
     for doc in df.text:
         removeattweet.append(removeat(doc))
     df.text =removeattweet
-
+    #print('REMOVE ATTWEET ******** ',df.text)
+    
+    
     lowertweet=[]
     for doc in df.text:
         lowertweet.append(tolower(doc))
     df.text = lowertweet
-
+    #print('LOWER TWEET ******* ', df.text)
+    
     tweets=[]
     for x in df.text:
         tweet = ''
@@ -146,12 +162,20 @@ def clean(df):
             tweet += word+' '
         tweets.append(word_tokenize(tweet))
     df.text= tweets
-
+    #print('WORD TOKENIZE ***********', df.text)
+    
+    #removing stop words
+    nostopwordtweet=[]
+    for doc in df.text:
+        nostopwordtweet.append(removeUrls(removedstopwords(doc)))
+    df.text =nostopwordtweet
+    #print('STOP WORDS ********* ', df.text)
+    
     #stemming
     stemtweets=[]
     from nltk.stem.snowball import SnowballStemmer
     stemmer = SnowballStemmer("english", ignore_stopwords=False)
-    #ps= PorterStemmer()
+    
     for x in df.text:
         stemtweet=''
         for word in x:
@@ -165,14 +189,7 @@ def clean(df):
     df_stemmed = pd.DataFrame()
     df_stemmed['text'] = df['stemmed']
     df_stemmed['Sentiment'] = df['Sentiment']
-    
-    ### Finalize both the stemmed and unstemmed dataframes
-    #df_unstemmed = df.drop(['stemmed'], axis=1)
-    #df_unstemmed.head()
-
-    # create a df with stemmed text
-    #df_stemmed = df.drop(['text'], axis=1)
-    
+        
     return df_stemmed,df_unstemmed
 
 
@@ -181,61 +198,7 @@ def dummy_fun(doc):
     return doc
 
 def getrep(df, rep):
-    if rep == 'binary':
-        vectorizer = CountVectorizer(binary = True, analyzer='word', tokenizer=dummy_fun, preprocessor=dummy_fun, token_pattern=None)
-        text = df.text
-        vectorizer.fit(text)
-        freqVocab = vectorizer.vocabulary_
-        train_vector = vectorizer.transform(text)
-        #Create bigdoc that contains words in V, their corresponding frequencies for each class
-
-        #1.Transform pos and neg tweets into seprate vectors
-        train_pos_vector1 = vectorizer.transform(df[df['Sentiment']==1]['text'])
-        train_neg_vector1 = vectorizer.transform(df[df['Sentiment']==0]['text'])
-
-        #2. column sum of vectors(word per column)
-        sum_pos = train_pos_vector1.sum(axis = 0)
-        sum_neg = train_neg_vector1.sum(axis = 0)
-
-        #3. Initialize bigdoc as a dataframe
-        bigdoc = pd.DataFrame(index = list(set(freqVocab.keys())), columns = ['pos', 'neg'])
-
-        #4. get the corresponding frequency from the above matrx and set it to bigdoc
-        for word in freqVocab.keys():
-            index = freqVocab.get(word)
-            bigdoc.at[word, 'pos'] = sum_pos[:, index].item()
-            bigdoc.at[word, 'neg'] = sum_neg[:, index].item()
-        return bigdoc, freqVocab, train_vector, vectorizer
-
-    elif rep == 'freq': #for frequency representation
-
-        vectorizer = CountVectorizer(analyzer='word', tokenizer=dummy_fun, preprocessor=dummy_fun, token_pattern=None)          
-        text = df.text
-        vectorizer.fit(text)
-        freqVocab = vectorizer.vocabulary_
-        train_vector = vectorizer.transform(text)
-        #Create bigdoc that contains words in V, their corresponding frequencies for each class
-
-        #1.Transform pos and neg tweets into seprate vectors
-        train_pos_vector1 = vectorizer.transform(df[df['Sentiment']==1]['text'])
-        train_neg_vector1 = vectorizer.transform(df[df['Sentiment']==0]['text'])
-
-        #2. column sum of vectors(word per column)
-        sum_pos = train_pos_vector1.sum(axis = 0)
-        sum_neg = train_neg_vector1.sum(axis = 0)
-
-        #3. Initialize bigdoc as a dataframe
-        bigdoc = pd.DataFrame(index = list(set(freqVocab.keys())), columns = ['pos', 'neg'])
-
-        #4. get the corresponding frequency from the above matrx and set it to bigdoc
-        for word in freqVocab.keys():
-            index = freqVocab.get(word)
-            bigdoc.at[word, 'pos'] = sum_pos[:, index].item()
-            bigdoc.at[word, 'neg'] = sum_neg[:, index].item()
-
-        return bigdoc, freqVocab, train_vector, vectorizer
-
-    elif rep == 'tfidf': #TF IDF Representation
+    if rep == 'tfidf': #TF IDF Representation
         #create TF IDF vector using NLTK
         freqdict={}
         #compute term frequency
@@ -282,31 +245,25 @@ def getrep(df, rep):
         for word in  docufreq:
             invdocufreq[word]= math.log(N/docufreq[word],10)
 
-        
+        '''
         sorted_x = dict(sorted(docufreq.items(), key=lambda kv: kv[1], reverse = True))
         print("20 Highest occuring elements from document frequency matrix ")
         print(list(islice(sorted_x.items(), 20)))
         sorted_x = dict(sorted(invdocufreq.items(), key=lambda kv: kv[1], reverse = True))
         print("20 Highest value elements from inverse document frequency matrix ")
-        print(list(islice(sorted_x.items(), 20)))
-        TFIDF_dataframe = pd.DataFrame(0,index= list(set(freqdict.keys())),columns= Vocab)
-
-        print(TFIDF_dataframe.shape)
+        print(list(islice(sorted_x.items(), 500)))
+        '''
         
-        #print(freqdict)
-
+        TFIDF_dataframe = pd.DataFrame(0,index= list(set(freqdict.keys())),columns= Vocab)
+        
         for wid,info in freqdict.items():
             for keyword in info:
-                if word== keyword:
-                    TFIDF_dataframe.at[wid,keyword]= info[keyword]* invdocufreq[keyword]
+                TFIDF_dataframe.at[wid,keyword]= info[keyword]* invdocufreq[keyword]
 
-
-        #TFIDFmatrix =  np.zeros(len(df),len(Vocab)) #initialize
         TFIDFmatrix= TFIDF_dataframe.values
         print(TFIDFmatrix)
         return TFIDF_dataframe,Vocab,TFIDFmatrix, None
     
-
 
 def main():
 
@@ -318,9 +275,10 @@ def main():
     clean_train_stem,clean_train_nostem= clean(train)
     clean_test_stem, clean_test_nostem= clean(test)
     print("cleaning done")
-    #print(clean_train_stem.head(5))
-    #print(clean_train_nostem.head(5))
     
+    print('shape of stem', clean_train_stem.shape)
+    print('shape of non stem', clean_train_nostem.shape)
+        
     print("create vectors")
     traindf_stem_tfidf, stem_vocab_tf, trainvector_stem_tfidf, ts_vectorizer= getrep(clean_train_stem, 'tfidf')
     traindf_nostem_tfidf, stem_vocab_tf, trainvector_nostem_tfidf, tn_vectorizer= getrep(clean_train_nostem, 'tfidf')
