@@ -123,37 +123,29 @@ def clean(df):
     def removeUrls(tweettokens):
         newtweettokentext = []
         for token in tweettokens:
-            if not re.compile(r'^[//t.co/]').search(token):
+            if (not re.compile(r'^//t.co/').search(token)) and (token != 'http' and token != 'https'):
                 newtweettokentext.append(token)
         return newtweettokentext
-        
-    #lisss = ['bday', 'yesterday', 'girl', 'gave', 'birth', 'first', 'born', 'i', '-D', '.', ',', '!', '//t.co/3KhGjoFgpX']   
-    #removeUrls(lisss) 
     
     cleantweet= []
     for doc in df.text:
         cleantweet.append(cleantweettext(doc))
     df.text= cleantweet
-    #print('CLEAN TWEET ******** ', df.text)
-
+    
     tokentweet=[]    
     for doc in df.text:
         tokentweet.append(TweetTokenizer().tokenize(doc))
     df.text= tokentweet
-    #print('EMOJI TOKENIZE ******* ',df.text)
     
     removeattweet=[]
     for doc in df.text:
         removeattweet.append(removeat(doc))
-    df.text =removeattweet
-    #print('REMOVE ATTWEET ******** ',df.text)
-    
+    df.text =removeattweet    
     
     lowertweet=[]
     for doc in df.text:
         lowertweet.append(tolower(doc))
     df.text = lowertweet
-    #print('LOWER TWEET ******* ', df.text)
     
     tweets=[]
     for x in df.text:
@@ -162,15 +154,13 @@ def clean(df):
             tweet += word+' '
         tweets.append(word_tokenize(tweet))
     df.text= tweets
-    #print('WORD TOKENIZE ***********', df.text)
     
     #removing stop words
     nostopwordtweet=[]
     for doc in df.text:
         nostopwordtweet.append(removeUrls(removedstopwords(doc)))
     df.text =nostopwordtweet
-    #print('STOP WORDS ********* ', df.text)
-    
+       
     #stemming
     stemtweets=[]
     from nltk.stem.snowball import SnowballStemmer
@@ -242,7 +232,7 @@ def getrep(df, rep):
                 if wordintweet(tweet, word) == 1:
                     docufreq[word]+=1
 
-        for word in  docufreq:
+        for word in docufreq:
             invdocufreq[word]= math.log(N/docufreq[word],10)
 
         '''
@@ -255,6 +245,7 @@ def getrep(df, rep):
         '''
         
         TFIDF_dataframe = pd.DataFrame(0,index= list(set(freqdict.keys())),columns= Vocab)
+        print(TFIDF_dataframe.shape)
         
         for wid,info in freqdict.items():
             for keyword in info:
