@@ -22,7 +22,7 @@ import re
 from nltk.tokenize.casual import TweetTokenizer
 import numpy as np
 import math
-import sys
+import sys, os
 import operator
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -249,18 +249,47 @@ def getrep(df, rep):
         
         for wid,info in freqdict.items():
             for keyword in info:
-                TFIDF_dataframe.at[wid,keyword]= info[keyword]* invdocufreq[keyword]
+                if info[keyword] > 0:
+                    tfscore = 1+math.log(info[keyword],10)
+                else:
+                    tfscore = 0
+                TFIDF_dataframe.at[wid,keyword]= tfscore * invdocufreq[keyword]
 
         TFIDFmatrix= TFIDF_dataframe.values
-        print(TFIDFmatrix)
-        return TFIDF_dataframe,Vocab,TFIDFmatrix, None
+        TFIDF_dataframe.to_csv("trainTFIDFdf.csv")
+        return TFIDF_dataframe,Vocab,TFIDFmatrix, invdocufreq
+    
+def transformtest(refDF, testdf, invdocufreq, trainVocab):    
+    freqdict={}
+    #compute term frequency
+    for tweet in testdf.text:
+        tf={}
+        for word in tweet:
+            if word in tf:
+                tf[word]+=1
+            else:
+                tf[word]= 1
+        freqdict[" ".join(tweet)[:15]]= tf
+        
+    testTFIDFdf = pd.DataFrame(0, index = list(set(freqdict.keys())), columns= list(refDF.columns))
+    
+    for wid,info in freqdict.items():
+        for keyword in info:
+            if (keyword in trainVocab):
+                if info[keyword] > 0:
+                    tfscore = 1+math.log(info[keyword],10)
+                else:
+                    tfscore = 0
+                testTFIDFdf.at[wid,keyword]= tfscore * invdocufreq[keyword]    
+    
+    return testTFIDFdf
     
 
 def main():
-
+    os.chdir("D:\\Spring 2020\\assignments\\senticlassFFNL-master\\senticlassFFNL")
     # print command line arguments
-    train= get_data(sys.argv[1])
-    test= get_data(sys.argv[2])
+    train= get_data("tweet\\train") #get_data(sys.argv[1])
+    test= get_data("tweet\\test")  #get_data(sys.argv[2])
     
     print("cleaning data")
     clean_train_stem,clean_train_nostem= clean(train)
@@ -272,10 +301,14 @@ def main():
         
     print("create vectors")
     traindf_stem_tfidf, stem_vocab_tf, trainvector_stem_tfidf, ts_vectorizer= getrep(clean_train_stem, 'tfidf')
-    traindf_nostem_tfidf, stem_vocab_tf, trainvector_nostem_tfidf, tn_vectorizer= getrep(clean_train_nostem, 'tfidf')
+    traindf_nostem_tfidf, nostem_vocab_tf, trainvector_nostem_tfidf, tn_vectorizer= getrep(clean_train_nostem, 'tfidf')
 
-            
-
+    test_stem_tfidf_df = transformtest(traindf_stem_tfidf, clean_test_stem, ts_vectorizer,stem_vocab_tf)
+    test_nostem_tfidf_df = transformtest(traindf_nostem_tfidf, clean_test_nostem, tn_vectorizer, nostem_vocab_tf)
+    test_stem_tfidf_df.to_csv("testTFIDFdf_s.csv")
+    test_nostem_tfidf_df.to_csv("testTFIDFdf_n.csv")
+    
+    
 if __name__ == "__main__":
     main()
 
