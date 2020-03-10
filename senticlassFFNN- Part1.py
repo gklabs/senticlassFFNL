@@ -37,6 +37,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
+from torch.autograd import Variable
 
 #nl.download('punkt')
 
@@ -318,54 +319,53 @@ def main():
     test= get_data("tweet\\test")
     traindf_stem_tfidf = pd.read_csv("D:\\Spring 2020\\assignments\\senticlassFFNL-master\\senticlassFFNL\\trainTFIDFdf.csv")
     testdf_stem_tfidf = pd.read_csv("D:\\Spring 2020\\assignments\\senticlassFFNL-master\\senticlassFFNL\\testTFIDFdf_s.csv")
+    '''
+    def dummy_fun(doc):
+        return doc
     
+    clean_train_stem,clean_train_nostem= clean(train)
+    tfidf_vectorizer = TfidfVectorizer(analyzer='word', tokenizer=dummy_fun, preprocessor=dummy_fun, token_pattern=None)    
+    traindf_stem_tfidf = tfidf_vectorizer.fit_transform(clean_train_stem.text)
+    
+    traindf_stem_tfidf.toarray()
+    
+    X_train, X_val, y_train, y_val = train_test_split(traindf_stem_tfidf, train.Sentiment, test_size=0.33, random_state=42)
+    train_data = trainData(torch.FloatTensor(X_train.toarray()), torch.FloatTensor(y_train.values))
+    val_data = testData(torch.FloatTensor(X_val.toarray()))#, torch.FloatTensor(y_val.values))
+    '''
     X_train, X_val, y_train, y_val = train_test_split(traindf_stem_tfidf.values[:,1:], train.Sentiment, test_size=0.33, random_state=42)
     
-    train_data = trainData(torch.FloatTensor(X_train), torch.FloatTensor(y_train.values))
-    val_data = trainData(torch.FloatTensor(X_val), torch.FloatTensor(y_val.values))
-    X_test = testdf_stem_tfidf.values[:,1:]
-    test_data = testData(torch.FloatTensor(X_test.astype(np.float32)))
+    y_train = torch.from_numpy(y_train.values.reshape((y_train.shape[0],-1))).float()
+    y_val = torch.from_numpy(y_val.values.reshape((y_val.shape[0],-1))).float()
     
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     
-    model = FeedForwardNeuralNetwork(X_train.shape[1])  # Logistic Regression with x.shape[1] dimensions
-    model.to(device)
-    optimizer = optim.SGD(model.parameters(), lr=0.01)  # Optimizing with Stochastic Gradient Descent
-    loss = nn.MSELoss()  # Mean Squared Error Loss
-    iter = 0
-    correct = 0
-    total = 0
-    for epoch in range(1):  # Training Loop
-        for X_batch, y_batch in train_data:
-            X_batch, y_batch = X_batch.to(device), y_batch.to(device)
+    model = FeedForwardNeuralNetwork(X_train.shape[1])  # Feed forward neural network with x.shape[1] dimensions
+    learning_rates = [0.1, 0.05, 0.0001]
+    for l in learning_rates:
+        model.train()    
+        optimizer = optim.SGD(model.parameters(), lr=l)  # Optimizing with Stochastic Gradient Descent
+        loss = nn.MSELoss()  # Mean Squared Error Loss
+        losslist = []   
+        x = Variable(torch.from_numpy(X_train))
+        #Training
+        for epoch in range(50):  # Training Loop
+            yhat = model(x.float())  # Compute forward pass
+            output = loss(yhat.squeeze(), y_train.squeeze())  # Compute loss
             optimizer.zero_grad()  # Zero all the Gradients
-            yhat = model.forward(X_batch)  # Compute forward pass
-            output = loss(yhat.view(-1), y_batch.view(-1))  # Compute loss
             output.backward()  # Back propagate loss
             optimizer.step()  # Update weights
-            total += 1#y_val_batch.size(0)
-                    # Total correct predictions
-            correct += (torch.round(torch.sigmoid(yhat)) == y_batch.view(-1)).sum()
-            iter += 1
-            if iter % 500 == 0:
-                '''
-                # Calculate Accuracy         
-                correct = 0
-                total = 0
-                # Iterate through test dataset
-                for X_val_batch, y_val_batch in val_data: 
-                    X_val_batch, y_val_batch = X_val_batch.to(device), y_val_batch.to(device)
-                    y_val_pred = model.forward(X_val_batch)
-                    y_val_pred = torch.sigmoid(y_val_pred)
-                    y_val_tag = torch.round(y_val_pred)
-                    # Total number of labels
-                    total += 1#y_val_batch.size(0)
-                    # Total correct predictions
-                    correct += (y_val_tag == y_val_batch).sum()
-    '''
-                accuracy = 100 * correct / total
-                # Print Loss
-                print('Iteration: {}. Loss: {}. Accuracy: {}'.format(iter, output.item(), accuracy))
+            losslist.append(output.item())
+            print('Iteration: {}. Loss: {}. '.format(epoch, output.item()))#, accuracy, correct, total))
+        print('-------minimum loss for learning rate {} is {}-------'.format(l, min(losslist)))
+    
+    #Validation
+    model.eval()
+    x = Variable(torch.from_numpy(X_val))
+    y_pred = model(x.float())
+    val_loss = loss(y_pred.squeeze(), y_val.squeeze()) 
+    correct = (torch.round(y_pred) == y_val).sum()
+    print("validation accuracy ", 100 * correct /y_pred.shape[0])
+    print('validation loss ' , val_loss.item())
 
 class FeedForwardNeuralNetwork(nn.Module):
     def __init__(self, dims):
@@ -374,46 +374,16 @@ class FeedForwardNeuralNetwork(nn.Module):
         self.L2 = nn.Linear(20, 20)
         self.L3 = nn.Linear(20, 1)
         self.sigmoid = nn.Sigmoid()
-
+        
     def forward(self, x):
         a1 = self.sigmoid(self.L1(x))
         a2 = self.sigmoid(self.L2(a1))
         a3 = self.sigmoid(self.L3(a2))
         return a3
-'''
-Define custom data loaders
-'''
-## train data
-class trainData(Dataset):
-    
-    def __init__(self, X_data, y_data):
-        self.X_data = X_data
-        self.y_data = y_data
-        
-    def __getitem__(self, index):
-        return self.X_data[index], self.y_data[index]
-        
-    def __len__ (self):
-        return len(self.X_data)
 
-
-## test data    
-class testData(Dataset):
-    
-    def __init__(self, X_data):
-        self.X_data = X_data
-        
-    def __getitem__(self, index):
-        return self.X_data[index]
-        
-    def __len__ (self):
-        return len(self.X_data)
-    
 
 if __name__ == "__main__":
     main()
-
-
 
 
 
