@@ -10,6 +10,8 @@ Start:
 getdata()
 cleandata()
 vectorize()
+Train() 
+Test()
 
 
 '''
@@ -38,7 +40,12 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from torch.autograd import Variable
-
+from sklearn import preprocessing
+import time
+from tqdm import tqdm
+from sklearn.model_selection import StratifiedKFold
+tqdm.pandas()
+from sklearn.metrics import f1_score
 #nl.download('punkt')
 
 # pass path as train and test folder
@@ -241,15 +248,6 @@ def getrep(df, rep):
 
         for word in docufreq:
             invdocufreq[word]= math.log(N/docufreq[word],10)
-
-        '''
-        sorted_x = dict(sorted(docufreq.items(), key=lambda kv: kv[1], reverse = True))
-        print("20 Highest occuring elements from document frequency matrix ")
-        print(list(islice(sorted_x.items(), 20)))
-        sorted_x = dict(sorted(invdocufreq.items(), key=lambda kv: kv[1], reverse = True))
-        print("20 Highest value elements from inverse document frequency matrix ")
-        print(list(islice(sorted_x.items(), 500)))
-        '''
         
         TFIDF_dataframe = pd.DataFrame(0,index= list(set(freqdict.keys())),columns= Vocab)
         print(TFIDF_dataframe.shape)
@@ -269,14 +267,16 @@ def getrep(df, rep):
 def transformtest(refDF, testdf, invdocufreq, trainVocab):    
     freqdict={}
     #compute term frequency
+    counter = 0
     for tweet in testdf.text:
         tf={}
+        counter += 1
         for word in tweet:
             if word in tf:
                 tf[word]+=1
             else:
                 tf[word]= 1
-        freqdict[" ".join(tweet)[:15]]= tf
+        freqdict[counter]= tf
         
     testTFIDFdf = pd.DataFrame(0, index = list(set(freqdict.keys())), columns= list(refDF.columns))
     
@@ -290,56 +290,176 @@ def transformtest(refDF, testdf, invdocufreq, trainVocab):
                 testTFIDFdf.at[wid,keyword]= tfscore * invdocufreq[keyword]    
     
     return testTFIDFdf
-    
 
+def train_pred(model, train_X, train_y, val_X, val_y,test_data, test_labels, epochs=2, batch_size=200):
+    
+    valid_preds = np.zeros((val_X.size(0))) 
+    '''
+    test_normalized_X = preprocessing.normalize(test_data.values[:,1:])
+    test_X = Variable(torch.from_numpy(test_normalized_X)).float()
+    test_y = torch.from_numpy(test_labels.values.reshape((test_labels.shape[0],-1))).float()
+    '''
+    test_X = Variable(torch.from_numpy(test_data.toarray())).float() 
+    test_y = torch.from_numpy(test_labels.values.reshape((test_labels.shape[0],-1))).float()
+    
+    
+    test = torch.utils.data.TensorDataset(test_X, test_y)
+    test_loader = torch.utils.data.DataLoader(test, batch_size, shuffle=False)
+    test_preds = np.zeros(len(test_X))
+    
+    for e in range(epochs):
+        start_time = time.time()
+                       
+        optimizer = optim.SGD(model.parameters(), lr=0.1)  # Optimizing with Stochastic Gradient Descent
+        loss_fn = nn.MSELoss()  # Mean Squared Error Loss
+       
+        train_tsdata = torch.utils.data.TensorDataset(train_X, train_y)
+        valid_tsdata = torch.utils.data.TensorDataset(val_X, val_y)
+        
+        train_loader = torch.utils.data.DataLoader(train_tsdata, batch_size=batch_size, shuffle=True)
+        valid_loader = torch.utils.data.DataLoader(valid_tsdata, batch_size=batch_size, shuffle=False)
+      
+        model.train()
+        avg_loss = 0.
+        for x_batch, y_batch in tqdm(train_loader, disable=True):
+            y_pred = model(x_batch.float()).requires_grad_(True)
+            loss = loss_fn(y_pred.squeeze(), y_batch.float().squeeze())
+            #loss.requires_grad = True 
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            avg_loss += loss.item() / len(train_loader)
+        
+        model.eval()          
+        avg_val_loss = 0.
+        for i, (x_batch, y_batch) in enumerate(valid_loader):
+            y_pred = model(x_batch.float()).detach()
+            avg_val_loss += loss_fn(y_pred, y_batch.float()).item() / len(valid_loader)
+            valid_preds[i * batch_size:(i+1) * batch_size] = y_pred[:, 0].data.numpy()
+               
+        elapsed_time = time.time() - start_time
+        print('Epoch {}/{} \t loss={:.4f} \t val_loss={:.4f} \t time={:.2f}s'.format(
+            e + 1, epochs, avg_loss, avg_val_loss, elapsed_time))
+        
+        model.eval()
+        for i, (x_batch,_) in enumerate(test_loader):
+            y_pred = model(x_batch.float()).detach()
+            #pick the results from previous left out point to current batch quantity
+            test_preds[i * batch_size:(i+1) * batch_size] = y_pred[:, 0]        
+      
+    return valid_preds, test_preds
+
+def threshold_search(y_true, y_proba):
+    best_threshold = 0
+    best_score = 0
+    for threshold in [i * 0.01 for i in range(100)]:
+        print('the threshold is : ', threshold)
+        score = f1_score(y_true=y_true, y_pred=y_proba > threshold)
+        print("f1- score we got here :", score)
+        if score > best_score:
+            best_threshold = threshold
+            best_score = score
+    search_result = {'threshold': best_threshold, 'f1': best_score}
+    return search_result
+
+def TrainingAndCV(train_data, train_labels, test_data, test_labels, n_splits = 2):           
+    '''
+    train_normalized_X = preprocessing.normalize(train_data.values[:,1:])
+    train_X = Variable(torch.from_numpy(train_normalized_X)).float()
+    train_y = torch.from_numpy(train_labels.values.reshape((train_labels.shape[0],-1))).float()
+    '''
+    train_X = Variable(torch.from_numpy(train_data.toarray())).float() 
+    train_y = torch.from_numpy(train_labels.values.reshape((train_labels.shape[0],-1))).float()
+    
+    splits = list(StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=7).split(train_X, train_y))
+    
+    train_preds = np.zeros((len(train_X)))
+    final_test_preds = np.zeros(len(test_labels))
+    
+    for i, (train_idx, valid_idx) in enumerate(splits):    
+        x_train = train_X[train_idx].clone()#.detach()#torch.tensor(train_X[train_idx], dtype=torch.long)
+        y_train = train_y[train_idx].clone()#.detach()#torch.tensor(train_y[train_idx, np.newaxis], dtype=torch.float32)
+        x_val = train_X[valid_idx].clone()#.detach()  #torch.tensor(train_X[valid_idx], dtype=torch.long)
+        y_val = train_y[valid_idx].clone()#.detach()  #torch.tensor(train_y[valid_idx, np.newaxis], dtype=torch.float32)
+        model = Feedforward(x_train.shape[1], 20) 
+        validation_preds, test_preds = train_pred(model, x_train, y_train, x_val, y_val, test_data, test_labels, epochs=5)
+        #print(validation_preds)
+        
+        #test_preds = test_pred(model, test_data, test_labels, batch_size=200)
+        train_preds[valid_idx] += validation_preds.reshape(-1)
+        print(validation_preds)
+        final_test_preds += test_preds.reshape(-1) / len(splits)
+    
+#    search_result = threshold_search(y_val[:, 0].data.numpy(), validation_preds)   
+#    print(search_result)
+#    final_test_preds = final_test_preds > search_result['threshold'] 
+    return final_test_preds
+    
 def main():
     os.chdir("D:\\Spring 2020\\assignments\\senticlassFFNL-master\\senticlassFFNL")
-    '''# print command line arguments
+    # print command line arguments
     train= get_data("tweet\\train") #get_data(sys.argv[1])
     test= get_data("tweet\\test")  #get_data(sys.argv[2])
     
     print("cleaning data")
     clean_train_stem,clean_train_nostem= clean(train)
-    #clean_test_stem, clean_test_nostem= clean(test)
+    clean_test_stem, clean_test_nostem= clean(test)
     print("cleaning done")
     
     print('shape of stem', clean_train_stem.shape)
     print('shape of non stem', clean_train_nostem.shape)
         
     print("create vectors")
-    traindf_stem_tfidf, stem_vocab_tf, trainvector_stem_tfidf, ts_vectorizer= getrep(clean_train_stem, 'tfidf')
+    #traindf_stem_tfidf, stem_vocab_tf, trainvector_stem_tfidf, ts_vectorizer= getrep(clean_train_stem, 'tfidf')
     #traindf_nostem_tfidf, nostem_vocab_tf, trainvector_nostem_tfidf, tn_vectorizer= getrep(clean_train_nostem, 'tfidf')
 
-    #test_stem_tfidf_df = transformtest(traindf_stem_tfidf, clean_test_stem, ts_vectorizer,stem_vocab_tf)
-    #test_nostem_tfidf_df = transformtest(traindf_nostem_tfidf, clean_test_nostem, tn_vectorizer, nostem_vocab_tf)
+    #testdf_stem_tfidf = transformtest(traindf_stem_tfidf, clean_test_stem, ts_vectorizer,stem_vocab_tf)
+    #test_nostem_tfidf = transformtest(traindf_nostem_tfidf, clean_test_nostem, tn_vectorizer, nostem_vocab_tf)
     #test_stem_tfidf_df.to_csv("testTFIDFdf_s.csv")
     #test_nostem_tfidf_df.to_csv("testTFIDFdf_n.csv")
-    '''
-    train= get_data("tweet\\train")
-    test= get_data("tweet\\test")
-    traindf_stem_tfidf = pd.read_csv("D:\\Spring 2020\\assignments\\senticlassFFNL-master\\senticlassFFNL\\trainTFIDFdf.csv")
-    testdf_stem_tfidf = pd.read_csv("D:\\Spring 2020\\assignments\\senticlassFFNL-master\\senticlassFFNL\\testTFIDFdf_s.csv")
-    '''
+
+    #traindf_stem_tfidf = pd.read_csv("D:\\Spring 2020\\assignments\\senticlassFFNL-master\\senticlassFFNL\\trainTFIDFdf.csv")
+    #testdf_stem_tfidf = pd.read_csv("D:\\Spring 2020\\assignments\\senticlassFFNL-master\\senticlassFFNL\\testTFIDFdf_s.csv")
+   
+    
+    final_test_preds = TrainingAndCV(traindf_stem_tfidf, train.Sentiment, testdf_stem_tfidf, test.Sentiment, n_splits = 4)
+    
+    if(len(final_test_preds) == len(test)):
+        outp = pd.DataFrame()
+        outp['act'] = test.Sentiment
+        outp['pred'] = final_test_preds
+        print('all good')
+        outp.to_csv("resultmanual.csv")
+    else:
+        print('something fishy')
+      
+    data = pd.read_csv("resultmanual.csv")    
+    
     def dummy_fun(doc):
         return doc
     
-    clean_train_stem,clean_train_nostem= clean(train)
+    
     tfidf_vectorizer = TfidfVectorizer(analyzer='word', tokenizer=dummy_fun, preprocessor=dummy_fun, token_pattern=None)    
     traindf_stem_tfidf = tfidf_vectorizer.fit_transform(clean_train_stem.text)
+    testdf_stem_tfidf = tfidf_vectorizer.transform(clean_test_stem.text)
+    
     
     traindf_stem_tfidf.toarray()
-    
+    '''
     X_train, X_val, y_train, y_val = train_test_split(traindf_stem_tfidf, train.Sentiment, test_size=0.33, random_state=42)
     train_data = trainData(torch.FloatTensor(X_train.toarray()), torch.FloatTensor(y_train.values))
     val_data = testData(torch.FloatTensor(X_val.toarray()))#, torch.FloatTensor(y_val.values))
-    '''
-    X_train, X_val, y_train, y_val = train_test_split(traindf_stem_tfidf.values[:,1:], train.Sentiment, test_size=0.33, random_state=42)
+   
+    
+    #Working copy of code
+    train_normalized_X = preprocessing.normalize(traindf_stem_tfidf.values[:,1:])
+    X_train, X_val, y_train, y_val = train_test_split(train_normalized_X, train.Sentiment, test_size=0.33, random_state=42)
     
     y_train = torch.from_numpy(y_train.values.reshape((y_train.shape[0],-1))).float()
     y_val = torch.from_numpy(y_val.values.reshape((y_val.shape[0],-1))).float()
     
     
-    model = FeedForwardNeuralNetwork(X_train.shape[1])  # Feed forward neural network with x.shape[1] dimensions
+    model = Feedforward(X_train.shape[1], 20)  # Feed forward neural network with x.shape[1] dimensions
     learning_rates = [0.1, 0.05, 0.0001]
     for l in learning_rates:
         model.train()    
@@ -364,8 +484,23 @@ def main():
     y_pred = model(x.float())
     val_loss = loss(y_pred.squeeze(), y_val.squeeze()) 
     correct = (torch.round(y_pred) == y_val).sum()
-    print("validation accuracy ", 100 * correct /y_pred.shape[0])
+    print("validation accuracy : {}".format(round(100 * correct.item() /y_pred.shape[0],2)))
     print('validation loss ' , val_loss.item())
+'''
+class Feedforward(torch.nn.Module):
+    def __init__(self, input_size, hidden_size):
+        super(Feedforward, self).__init__()
+        self.input_size = input_size
+        self.hidden_size  = hidden_size
+        self.fc1 = torch.nn.Linear(self.input_size, self.hidden_size)
+        self.fc2 = torch.nn.Linear(self.hidden_size, self.hidden_size)
+        self.fc3 = torch.nn.Linear(self.hidden_size, 1)
+        self.sigmoid = torch.nn.Sigmoid()
+    def forward(self, x):
+        hidden1 = self.sigmoid(self.fc1(x))
+        hidden2 = self.sigmoid(self.fc2(hidden1))
+        output = self.sigmoid(self.fc3(hidden2))
+        return output
 
 class FeedForwardNeuralNetwork(nn.Module):
     def __init__(self, dims):
@@ -384,8 +519,6 @@ class FeedForwardNeuralNetwork(nn.Module):
 
 if __name__ == "__main__":
     main()
-
-
 
 
 
