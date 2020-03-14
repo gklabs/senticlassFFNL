@@ -4,49 +4,14 @@ Description: AIT 726 Homework 2
 Command to run the file:
 (python senticlassFFNN.py [train folder location] [test folder location] )
 
-1. import dependencies
-2. get data
-    train
-      Validation randomly chosen
-    test
-3. Clean data
-    remove html tags
-    flight names starting with @
-    links (strings with //)
-    stemming using 
-    remove stop words
-4. Vectorization
-      TF- IDF representation from scratch
-      Calculate Term Frequency of every token in every tweet
-      Calculate Document Frequency of every token across training data
-      Compute Inverse Document Frequency (formula)
-      Compute TF*IDF
-      Create a Matrix representation of TF*IDF (embedding) and return it.
-5.Build FFNN (arg: TF*IDF matrix)
-      input layer
-      20 nodes x 2 layers
-      One output node
-      Sigmoid Activation between layers
-      Loss: Mean Square Error
-      Initialize weights and biases to zeros
-      Initialize learning rate to 0.001
-      Forward propagation
-      Backpropagation
-      initialize to 100 Epochs
-6. Predict on Validation set
-        Accuracy
-        Confusion Matrix
-***** Repeat 5 and 6 to test for different epochs and learning rates ****
-   7. Predict on Test set
-          Clean Test
-          convert to TFIDF representation
-            Ignore all the words in test that are not in train data
-            Use TF of Test tweet and Use IDF from train data for each word
-           Use tuned parameters of the final neural network 
-            Print Accuracy
-            Print Confusion matrix
-            
-  ##############################
+Detailed Procedure:
+
+Start:
+getdata()
+cleandata()
+vectorize()
+Train() 
+Test()
 
 
 '''
@@ -229,12 +194,19 @@ def clean(df):
         
     return df_stemmed,df_unstemmed
 
-
+'''
+This method is used to create vector representation for the tokenized data.
+Steps:Calculate Term Frequency of every token in every tweet
+      Calculate Document Frequency of every token across training data
+      Compute Inverse Document Frequency (formula)
+      Compute TF*IDF
+      Create a Matrix representation of TF*IDF (embedding) and return it.
+'''
 # initialize count vectorizer
-def dummy_fun(doc):
-    return doc
-
 def getrep(df, rep):
+    def dummy_fun(doc):
+        return doc
+
     if rep == 'tfidf': #TF IDF Representation
         #create TF IDF vector using NLTK
         freqdict={}
@@ -314,7 +286,7 @@ def transformtest(refDF, testdf, invdocufreq, trainVocab):
         freqdict[counter]= tf
         
     testTFIDFdf = pd.DataFrame(0, index = list(set(freqdict.keys())), columns= list(refDF.columns))
-    
+    #Get the document frequency based on Train IDF
     for wid,info in freqdict.items():
         for keyword in info:
             if (keyword in trainVocab):
@@ -326,6 +298,11 @@ def transformtest(refDF, testdf, invdocufreq, trainVocab):
     
     return testTFIDFdf
 
+
+'''
+Training method performs model building, learning parameters from train set and test on validation set
+Training runs for several epochs and different learning rates 
+'''
 def train_pred(model, train_X, train_y, val_X, val_y, epochs=2, batch_size=200):    
     valid_preds = np.zeros((val_X.size(0)))     
     trainloss = []
@@ -350,6 +327,7 @@ def train_pred(model, train_X, train_y, val_X, val_y, epochs=2, batch_size=200):
             for x_batch, y_batch in tqdm(train_loader, disable=True):
                 y_pred = model(x_batch.float()).requires_grad_(True)
                 loss = loss_fn(y_pred.squeeze(), y_batch.float().squeeze())
+                #loss.requires_grad = True 
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -378,6 +356,9 @@ def train_pred(model, train_X, train_y, val_X, val_y, epochs=2, batch_size=200):
         plt.show()
     return model
 
+'''
+This method tests the data and outputs accuracy of the model
+'''
 def testing(model, test_data, test_labels):
     test_normalized_X = preprocessing.normalize(test_data.values[:,1:])
     test_X = Variable(torch.from_numpy(test_normalized_X)).float()
@@ -388,19 +369,13 @@ def testing(model, test_data, test_labels):
     print("Accuracy is {}".format(np.round(np.sum(predictions == test_labels.values) / len(test_X), 2)))
     return predictions
       
-def threshold_search(y_true, y_proba):
-    best_threshold = 0
-    best_score = 0
-    for threshold in [i * 0.01 for i in range(100)]:
-        print('the threshold is : ', threshold)
-        score = f1_score(y_true=y_true, y_pred=y_proba > threshold)
-        print("f1- score we got here :", score)
-        if score > best_score:
-            best_threshold = threshold
-            best_score = score
-    search_result = {'threshold': best_threshold, 'f1': best_score}
-    return search_result
 
+'''
+This method divides the training set into train and validation datasets. 
+The splitting is done based on stratified K fold cross validation with k = 3
+For every fold, the taining and validation is performed by calling train_pred(model, x_train, y_train, x_val, y_val, epochs) method
+Testing function is called and the value of test accuray is obtained
+'''
 def TrainingAndCV(train_data, train_labels, test_data, test_labels, n_splits = 2):           
     train_normalized_X = preprocessing.normalize(train_data.values[:,1:])
     train_X = Variable(torch.from_numpy(train_normalized_X)).float()
@@ -414,9 +389,8 @@ def TrainingAndCV(train_data, train_labels, test_data, test_labels, n_splits = 2
         y_train = train_y[train_idx].clone()
         x_val = train_X[valid_idx].clone()
         y_val = train_y[valid_idx].clone()
-        model = Feedforward(x_train.shape[1], 20) 
-        model = train_pred(model, x_train, y_train, x_val, y_val, epochs=2
-                           000)
+        model = Feedforward(x_train.shape[1], 2000) 
+        model = train_pred(model, x_train, y_train, x_val, y_val, epochs=2)
     testing(model, test_data, test_labels)
     
 def main():
@@ -453,13 +427,15 @@ class Feedforward(torch.nn.Module):
         self.input_size = input_size
         self.hidden_size  = hidden_size
         self.fc1 = torch.nn.Linear(self.input_size, self.hidden_size)
-        self.fc2 = torch.nn.Linear(self.hidden_size, 1)
-        #self.fc3 = torch.nn.Linear(self.hidden_size, 1)
+        nn.init.xavier_normal_(self.fc1.weight)
+        self.fc2 = torch.nn.Linear(self.hidden_size, hidden_size)
+        nn.init.xavier_normal_(self.fc2.weight)
+        self.fc3 = torch.nn.Linear(self.hidden_size, 1)
         self.sigmoid = torch.nn.Sigmoid()
     def forward(self, x):
         hidden1 = self.sigmoid(self.fc1(x))
         output = self.sigmoid(self.fc2(hidden1))
-        #output = self.sigmoid(self.fc3(hidden2))
+        output = self.sigmoid(self.fc3(output))
         return output
 
 
