@@ -6,15 +6,64 @@ Command to run the file:
 
 Detailed Procedure:
 
-Start:
-getdata()
-cleandata()
-vectorize()
-Train() 
-Test()
+1. import dependencies
+2. get data
+    Read training data of positive and negative tweets
+    Read testing data of positive and negative tweets
+3. Clean data
+    remove html tags, flight names starting with @, links (strings with //)
+    lower case the word if the first letter is uppercase
+    remove stop words
+    Tokenize the word and emojis using TweetTokenizer on nltk.tokenize.casual 
+    Create seperate datasets with stemmed tokens and non stemmed tokens 
+4. Vectorization
+   Train(Fit - Transform): 
+      TF- IDF representation from scratch
+      Calculate Term Frequency of every token in every tweet
+      Calculate Document Frequency of every token across training data
+      Compute Inverse Document Frequency (formula)
+      Compute TF*IDF
+      Create a Matrix representation of TF*IDF (embedding) and return it.  
+5.Build FFNN 
+part1: Model building using Feedforward in Pytorch's nn.Module      
+      dimensions - Input layer : size of vocab(5639 for stem, 7 for unstemmed)
+                   Hidden layer: 20 nodes 
+                   Output layer: 1 which is the probability score if the tweet is positive      
+      Sigmoid as Activation function for the linear layers
+      Initialize weights to random numbers
+Part2: Training
+      Train the model on the vectorized representation of train data
+      Use k-fold cross validation for k=3 to test the generalizability of the model
+      Run the training for 2000 epochs and learning rates set = [0.0001, 0.005, 0.01]  
+      Initialize the loss function to MSE loss
+      Use Stochastic Gradient descent optimizer
+      Use batch size = 200
+      for each epoch:
+          for 1 pass(batch size = 200):
+              On train:
+              Do Forward propagation to compute the probability 
+              Compute training loss
+              Backpropagate the error and update weights
+              On validation:
+              Do Forward propagation to compute the probability 
+              Compute validation loss               
+          Compute overall training and validation cost for the epoch by taking avaerage of all the losses for each pass
+          Compute validation accuracy, Confusion Matrix -------PENDING
+      Visualize the loss for each epoch and validation accuracy for each epoch
+7. Predict on Test set
+   Clean Test Data
+   Vector represenation of test:
+       Create Term frequncy matrix for all the tokens in test data
+       Multipy TF of test data with the IDF representation of train data to get test vector representation
+   Use tuned parameters of the final neural network 
+   Compute the probabilities for the test
+   Print Accuracy
+   Print Confusion matrix -------PENDING
+            
+  ##############################
+  
+  '''
 
-
-'''
 import pandas as pd
 from collections import defaultdict
 from pathlib import Path
@@ -309,11 +358,11 @@ def train_pred(model, train_X, train_y, val_X, val_y, epochs=2, batch_size=200):
     testloss = []
     testaccuracy = []
     lrs = [0.0001, 0.005, 0.01]
-    for lr in lrs:            
+    for l in lrs:            
         for e in range(epochs):
             start_time = time.time()
                            
-            optimizer = optim.SGD(model.parameters(), lr=0.0001)  # Optimizing with Stochastic Gradient Descent
+            optimizer = optim.SGD(model.parameters(), lr=l)  #Optimizing with Stochastic Gradient Descent
             loss_fn = nn.MSELoss()  # Mean Squared Error Loss
            
             train_tsdata = torch.utils.data.TensorDataset(train_X, train_y)
@@ -389,8 +438,8 @@ def TrainingAndCV(train_data, train_labels, test_data, test_labels, n_splits = 2
         y_train = train_y[train_idx].clone()
         x_val = train_X[valid_idx].clone()
         y_val = train_y[valid_idx].clone()
-        model = Feedforward(x_train.shape[1], 2000) 
-        model = train_pred(model, x_train, y_train, x_val, y_val, epochs=2)
+        model = Feedforward(x_train.shape[1], 20) 
+        model = train_pred(model, x_train, y_train, x_val, y_val, epochs=2000)
     testing(model, test_data, test_labels)
     
 def main():
@@ -417,9 +466,9 @@ def main():
     
     print("Training phase...")
     print("------------------------------------- \n For stem dataset \n-------------------------------------")
-    TrainingAndCV(traindf_stem_tfidf, train.Sentiment, testdf_stem_tfidf, test.Sentiment, n_splits = 3)
+    TrainingAndCV(traindf_stem_tfidf, train.Sentiment, testdf_stem_tfidf, test.Sentiment, n_splits = 5)
     print("------------------------------------- \n For non stem dataset \n-------------------------------------")
-    TrainingAndCV(traindf_nostem_tfidf, train.Sentiment, test_nostem_tfidf, test.Sentiment, n_splits = 3)
+    TrainingAndCV(traindf_nostem_tfidf, train.Sentiment, test_nostem_tfidf, test.Sentiment, n_splits = 5)
    
 class Feedforward(torch.nn.Module):
     def __init__(self, input_size, hidden_size):
