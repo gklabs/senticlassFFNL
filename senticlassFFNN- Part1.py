@@ -26,7 +26,7 @@ Detailed Procedure:
       Create a Matrix representation of TF*IDF (embedding) and return it.  
 5.Build FFNN 
 part1: Model building using Feedforward in Pytorch's nn.Module      
-      dimensions - Input layer : size of vocab(5639 for stem, 7 for unstemmed)
+      dimensions - Input layer : size of vocab(5639 for stem, 7269 for unstemmed)
                    Hidden layer: 20 nodes 
                    Output layer: 1 which is the probability score if the tweet is positive      
       Sigmoid as Activation function for the linear layers
