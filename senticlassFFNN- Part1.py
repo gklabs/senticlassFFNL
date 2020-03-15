@@ -16,14 +16,13 @@ Detailed Procedure:
     remove stop words
     Tokenize the word and emojis using TweetTokenizer on nltk.tokenize.casual 
     Create seperate datasets with stemmed tokens and non stemmed tokens 
-4. Vectorization
-   Train(Fit - Transform): 
+4. TF IDF represenattion from scratch
       TF- IDF representation from scratch
       Calculate Term Frequency of every token in every tweet
       Calculate Document Frequency of every token across training data
       Compute Inverse Document Frequency (formula)
       Compute TF*IDF
-      Create a Matrix representation of TF*IDF (embedding) and return it.  
+      Create a normalized Matrix representation of TF*IDF (embedding) and return it.  
 5.Build FFNN 
 part1: Model building using Feedforward in Pytorch's nn.Module      
       dimensions - Input layer : size of vocab(5639 for stem, 7269 for unstemmed)
@@ -48,7 +47,7 @@ Part2: Training
               Do Forward propagation to compute the probability 
               Compute validation loss               
           Compute overall training and validation cost for the epoch by taking avaerage of all the losses for each pass
-          Compute validation accuracy, Confusion Matrix -------PENDING
+          Compute validation accuracy
       Visualize the loss for each epoch and validation accuracy for each epoch
 7. Predict on Test set
    Clean Test Data
@@ -58,7 +57,7 @@ Part2: Training
    Use tuned parameters of the final neural network 
    Compute the probabilities for the test
    Print Accuracy
-   Print Confusion matrix -------PENDING
+   Print Confusion matrix
             
   ##############################
   
@@ -74,29 +73,24 @@ from nltk.tokenize.casual import TweetTokenizer
 import numpy as np
 import math
 import sys, os
-import operator
 from sklearn.metrics import confusion_matrix
-from sklearn.metrics import accuracy_score
 import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split
 from nltk.corpus import stopwords
+from nltk.stem.snowball import SnowballStemmer
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
 from torch.autograd import Variable
 from sklearn import preprocessing
 import time
-from tqdm import tqdm
 from sklearn.model_selection import StratifiedKFold
-tqdm.pandas()
-from sklearn.metrics import f1_score
-#nl.download('punkt')
+nl.download('punkt')
+nl.download('stopwords')
 
 # pass path as train and test folder
 
-#stdoutorigin = sys.stdout
-#sys.stdout = open("D:\\Spring 2020\\assignments\\sentiment_classification\\log.txt", "w")
+stdoutorigin = sys.stdout
+sys.stdout = open("D:\\Spring 2020\\assignments\\senticlassFFNL-master\\log_nonormalizedtfidf.txt", "w")
 ################ Functions######################
 def get_data(path):
     pospath = path + '/positive'
@@ -147,7 +141,7 @@ def clean(df):
         cleantext = " ".join(filter(lambda x:x[0]!='@', cleantext.split()))
         cleantext = cleantext.replace('#', '')
         return cleantext
-
+    #Remove words start with @(handles)
     def removeat(text):
         atlist=[]
         for word in text:
@@ -158,7 +152,8 @@ def clean(df):
             else:
                 atlist.append(word)
         return atlist
-
+    
+    #Uncapitalize words with first letter as uppercase
     def tolower(text):
         lowerlist=[]
         for word in text:
@@ -170,6 +165,7 @@ def clean(df):
                 lowerlist.append(word)
         return lowerlist
     
+    #Do not include stop words
     def removedstopwords(tweettokens):
         return [word for word in tweettokens if word not in stopwords.words('english')]
     
@@ -181,6 +177,7 @@ def clean(df):
                 newtweettokentext.append(token)
         return newtweettokentext
     
+    #Calling athe above functions on the data
     cleantweet= []
     for doc in df.text:
         cleantweet.append(cleantweettext(doc))
@@ -208,16 +205,14 @@ def clean(df):
             tweet += word+' '
         tweets.append(word_tokenize(tweet))
     df.text= tweets
-    
-    #removing stop words
+   
     nostopwordtweet=[]
     for doc in df.text:
         nostopwordtweet.append(removeUrls(removedstopwords(doc)))
     df.text =nostopwordtweet
        
-    #stemming
+    #perform stemming using SnowballStemmer
     stemtweets=[]
-    from nltk.stem.snowball import SnowballStemmer
     stemmer = SnowballStemmer("english", ignore_stopwords=False)
     
     for x in df.text:
@@ -227,6 +222,7 @@ def clean(df):
         stemtweets.append(word_tokenize(stemtweet))
     df['stemmed']=stemtweets
 
+    #Craete seperate dataframes for stemmed and unstemmed tokenized tweets and return
     df_unstemmed = pd.DataFrame()
     df_unstemmed['text'] = df['text']
     df_unstemmed['Sentiment'] = df['Sentiment']
@@ -242,7 +238,7 @@ Steps:Calculate Term Frequency of every token in every tweet
       Calculate Document Frequency of every token across training data
       Compute Inverse Document Frequency (formula)
       Compute TF*IDF
-      Create a Matrix representation of TF*IDF (embedding) and return it.
+      Create a normalized Matrix representation of TF*IDF (embedding) and return it.
 '''
 # initialize count vectorizer
 def getrep(df, rep):
@@ -289,18 +285,20 @@ def getrep(df, rep):
         Vocab= sorted(Vocab)
         docufreq= {el:0 for el in Vocab}
         invdocufreq= {el:0 for el in Vocab}
-
+        
+        #Compute document frequency
         for word in Vocab:
             for tweet in df.text:
                 if wordintweet(tweet, word) == 1:
                     docufreq[word]+=1
-
+        
+        #Compute inverse - document frequency
         for word in docufreq:
             invdocufreq[word]= math.log(N/docufreq[word],10)
         
         TFIDF_dataframe = pd.DataFrame(0,index= list(set(freqdict.keys())),columns= Vocab)
-        print(TFIDF_dataframe.shape)
         
+        #Multiply tf and Idf 
         for wid,info in freqdict.items():
             for keyword in info:
                 if info[keyword] > 0:
@@ -310,12 +308,16 @@ def getrep(df, rep):
                 TFIDF_dataframe.at[wid,keyword]= tfscore * invdocufreq[keyword]
 
         TFIDFmatrix= TFIDF_dataframe.values
-        TFIDF_dataframe.to_csv("trainTFIDFdf.csv")
         return TFIDF_dataframe,Vocab,TFIDFmatrix, invdocufreq
-    
+
+'''
+This method creates vector representation for test data:
+Create Term frequncy matrix for all the tokens in test data
+Multipy TF of test data with the IDF representation of train data to get test vector representation
+'''  
 def transformtest(refDF, testdf, invdocufreq, trainVocab):    
     freqdict={}
-    #compute term frequency
+    #compute term frequency for test
     counter = 0
     for tweet in testdf.text:
         tf={}
@@ -341,65 +343,98 @@ def transformtest(refDF, testdf, invdocufreq, trainVocab):
     return testTFIDFdf
 
 '''
-
 Training method performs model building, learning parameters from train set and test on validation set
 Training runs for several epochs and different learning rates 
 '''
-def train_pred(model, train_X, train_y, val_X, val_y, epochs=2, batch_size=200):    
+def train_pred_ModelTuning(model, train_X, train_y, val_X, val_y, lr, epochs=2, batch_size=200):    
     valid_preds = np.zeros((val_X.size(0)))     
     trainloss = []
     testloss = []
     testaccuracy = []
-    lrs = [0.0001, 0.05, 0.1]
-    for l in lrs:            
-        for e in range(epochs):
-            start_time = time.time()
-                           
-            optimizer = optim.SGD(model.parameters(), lr=l)  #Optimizing with Stochastic Gradient Descent
-            loss_fn = nn.MSELoss()  # Mean Squared Error Loss
-           
-            train_tsdata = torch.utils.data.TensorDataset(train_X, train_y)
-            valid_tsdata = torch.utils.data.TensorDataset(val_X, val_y)
-            
-            train_loader = torch.utils.data.DataLoader(train_tsdata, batch_size=batch_size, shuffle=True)
-            valid_loader = torch.utils.data.DataLoader(valid_tsdata, batch_size=batch_size, shuffle=False)
-          
-            model.train()
-            avg_loss = 0.
-            for x_batch, y_batch in train_loader:
-                X = Variable(torch.FloatTensor(x_batch))
-                y = Variable(torch.FloatTensor(y_batch))
-                y_pred = model(X)
-                loss = loss_fn(y_pred.squeeze(), y.squeeze())
-                #loss.requires_grad = True 
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-                avg_loss += loss.item() / len(train_loader)
-            trainloss.append(avg_loss)
-            
-            model.eval()          
-            avg_val_loss = 0.
-            testacc = 0
-            for i, (x_batch, y_batch) in enumerate(valid_loader):
-                X_val = Variable(torch.FloatTensor(x_batch))
-                y_pred_val = model(X_val)
-                avg_val_loss += loss_fn(y_pred_val, y_batch.float()).item() / len(valid_loader)
-                valid_preds[i * batch_size:(i+1) * batch_size] = y_pred_val[:, 0].data.numpy()
-                testacc += np.sum(np.round(y_pred_val[:, 0].data.numpy()) == y_batch.float()[:, 0].data.numpy())
-                
-            elapsed_time = time.time() - start_time
-            
-            if (e % 500 == 0):  
-                print('Epoch {}/{} \t loss={:.4f} \t val_loss={:.4f} \t time={:.2f}s'.format(e + 1, epochs, avg_loss, avg_val_loss, elapsed_time))
-            
-            testloss.append(avg_val_loss)
-            testaccuracy.append(testacc/ len(val_y))        
-        plt.title("plot of train,val loss and val accuracy for lr = {}".format(l))
-        plt.plot(trainloss)
-        plt.plot(testloss)
-        plt.plot(testaccuracy)   
-        plt.show()
+              
+    for e in range(epochs):
+        start_time = time.time()
+                       
+        optimizer = optim.SGD(model.parameters(), lr=lr)  #Optimizing with Stochastic Gradient Descent
+        loss_fn = nn.MSELoss()  # Mean Squared Error Loss
+       
+        train_tsdata = torch.utils.data.TensorDataset(train_X, train_y)
+        valid_tsdata = torch.utils.data.TensorDataset(val_X, val_y)
+        
+        train_loader = torch.utils.data.DataLoader(train_tsdata, batch_size=batch_size, shuffle=True)
+        valid_loader = torch.utils.data.DataLoader(valid_tsdata, batch_size=batch_size, shuffle=False)
+      
+        model.train()
+        avg_loss = 0.
+        for x_batch, y_batch in train_loader:
+            X = Variable(torch.FloatTensor(x_batch))
+            y = Variable(torch.FloatTensor(y_batch))
+            optimizer.zero_grad() #null the gradients
+            y_pred = model(X) #forward pass
+            loss = loss_fn(y_pred.squeeze(), y.squeeze()) #Compute loss
+            loss.backward() #back propagate
+            optimizer.step()
+            avg_loss += loss.item() / len(train_loader)
+        trainloss.append(avg_loss)
+        
+        model.eval()          
+        avg_val_loss = 0.
+        testacc = 0
+        for i, (x_batch, y_batch) in enumerate(valid_loader):
+            X_val = Variable(torch.FloatTensor(x_batch))
+            y_pred_val = model(X_val)
+            avg_val_loss += loss_fn(y_pred_val, y_batch.float()).item() / len(valid_loader)
+            valid_preds[i * batch_size:(i+1) * batch_size] = y_pred_val[:, 0].data.numpy()
+            testacc += np.sum(np.round(y_pred_val[:, 0].data.numpy()) == y_batch.float()[:, 0].data.numpy())
+            #if (e % 10 == 0):
+                #print("predictions ......", y_pred_val[:, 0].data.numpy())
+                #print("Actuals.......", y_batch.float()[:, 0].data.numpy())
+        elapsed_time = time.time() - start_time
+        
+        if (e % 500 == 0):  
+            print('\t Epoch {}/{} \t loss={:.4f} \t val_loss={:.4f} \t time={:.2f}s'.format(e + 1, epochs, avg_loss, avg_val_loss, elapsed_time))
+       
+        testloss.append(avg_val_loss)
+        testaccuracy.append(testacc/ len(val_y))        
+    plt.title("plot of train,val loss and val accuracy for lr = {}".format(lr))
+    plt.plot(trainloss)
+    plt.plot(testloss)
+    plt.plot(testaccuracy)   
+    plt.show()
+    return min(testloss)
+
+'''
+This method is called for final training on the entire train data with the tuned parameters
+'''
+def training(train_X, train_y, lr, epochs=2, batch_size=200):   
+    model = Feedforward(train_X.shape[1], 20)  
+    print("\t Model Summary:")
+    print("\t ", model)      
+    trainloss = []              
+    for e in range(epochs):
+        start_time = time.time()
+                       
+        optimizer = optim.SGD(model.parameters(), lr=lr)  #Optimizing with Stochastic Gradient Descent
+        loss_fn = nn.MSELoss()  # Mean Squared Error Loss
+       
+        train_tsdata = torch.utils.data.TensorDataset(train_X, train_y)        
+        train_loader = torch.utils.data.DataLoader(train_tsdata, batch_size=batch_size, shuffle=True)
+      
+        model.train()
+        avg_loss = 0.
+        for x_batch, y_batch in train_loader:
+            X = Variable(torch.FloatTensor(x_batch))
+            y = Variable(torch.FloatTensor(y_batch))
+            optimizer.zero_grad() #null the gradients
+            y_pred = model(X) #forward pass
+            loss = loss_fn(y_pred.squeeze(), y.squeeze()) #Compute loss            
+            loss.backward() #back propagate
+            optimizer.step()
+            avg_loss += loss.item() / len(train_loader)
+        trainloss.append(avg_loss)
+        elapsed_time = time.time() - start_time
+        if (e % 499 == 0):  
+            print('\t Epoch {}/{} \t training loss ={:.4f} \t time={:.2f}s'.format(e + 1, epochs, avg_loss, elapsed_time))
     return model
 
 '''
@@ -410,11 +445,13 @@ def testing(model, test_data, test_labels):
     test_X = Variable(torch.from_numpy(test_normalized_X)).float()
     
     model.eval()
-    y_pred = model(test_X.float())
-    predictions = np.round(y_pred[:, 0].data.numpy())
-    print("Accuracy is {}".format(np.round(np.sum(predictions == test_labels.values) / len(test_X), 2)))
-    return predictions
-      
+    y_pred = model(test_X.float()) #Get predictions
+    predictions = np.round(y_pred[:, 0].data.numpy()) 
+    #compute accuracy and confusion matrix
+    cm = confusion_matrix(test_labels.values, predictions, labels=None)
+    print("\t Confusion matrix \n \t {}".format(cm))
+    print("\t Accuracy is {}".format(np.round(np.sum(predictions == test_labels.values) / len(test_X), 2)))
+    return predictions  
 
 '''
 This method divides the training set into train and validation datasets. 
@@ -422,66 +459,85 @@ The splitting is done based on stratified K fold cross validation with k = 3
 For every fold, the taining and validation is performed by calling train_pred(model, x_train, y_train, x_val, y_val, epochs) method
 Testing function is called and the value of test accuray is obtained
 '''
-def TrainingAndCV(train_data, train_labels, test_data, test_labels, n_splits = 2):           
-    train_normalized_X = preprocessing.normalize(train_data.values[:,1:])
+def TrainingAndCV(train_data, train_labels, n_splits = 2):           
+    train_normalized_X = train_data.values[:,1:]#preprocessing.normalize()
     train_X = torch.from_numpy(train_normalized_X).float()
     train_y = torch.from_numpy(train_labels.values.reshape((train_labels.shape[0],-1))).float()
     
+    #Initialize K fold cross validation 
     splits = list(StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=7).split(train_X, train_y))
-        
+    print("\t 4.1. K-fold cross-validation")
+    lrs = [0.0001, 0.05, 0.1, 1]
+    lrdict= dict((el,0) for el in lrs)
+    #Cross validation and parameter tuning
     for i, (train_idx, valid_idx) in enumerate(splits):    
-        print("K -fold Cross validation for set k = ", i)
+        print("\t K -fold Cross validation for set k = ", i+1)
         x_train = train_X[train_idx].clone()
         y_train = train_y[train_idx].clone()
         x_val = train_X[valid_idx].clone()
         y_val = train_y[valid_idx].clone()
-        model = Feedforward(x_train.shape[1], 20) 
-        model = train_pred(model, x_train, y_train, x_val, y_val, epochs=2000)
-    testing(model, test_data, test_labels)
+        model = Feedforward(x_train.shape[1], 20)        
+        for lr in lrs:
+            lrdict[lr] = train_pred_ModelTuning(model, x_train, y_train, x_val, y_val, lr, epochs=100, batch_size=200)
+    #Obtain the learning rate corresponding to minimum loss and train the data 
+    tunedlr = min(lrdict, key=lrdict.get)
+    print("\t On cross-validation the best parameter for learning rate was found to be ", tunedlr)
+    print("\t 4.2. Run the training with entire train data and learning rate = ", tunedlr)
+    model = training(train_X, train_y, lr= tunedlr, epochs=2000, batch_size=200)
+    return model
     
 def main():
+    print("1. Reading data...")
     os.chdir("D:\\Spring 2020\\assignments\\senticlassFFNL-master\\senticlassFFNL")
     # print command line arguments
     train= get_data("tweet\\train") #get_data(sys.argv[1])
     test= get_data("tweet\\test")  #get_data(sys.argv[2])
     
-    print("Cleaning data...")
-    clean_train_stem,clean_train_nostem= clean(train)
-    clean_test_stem, clean_test_nostem= clean(test)
-    print("Data Cleaning done")
+    print("2. Cleaning data...")
+    clean_train_stem,clean_train_nostem= clean(train)    
+    print("\t Data Cleaning done")
     
     print('shape of stem', clean_train_stem.shape)
     print('shape of non stem', clean_train_nostem.shape)
         
-    print("creating Vector representations(TF-IDF)...")
+    print("3. creating Vector representations(TF-IDF)...")
     traindf_stem_tfidf, stem_vocab_tf, trainvector_stem_tfidf, ts_vectorizer= getrep(clean_train_stem, 'tfidf')
     traindf_nostem_tfidf, nostem_vocab_tf, trainvector_nostem_tfidf, tn_vectorizer= getrep(clean_train_nostem, 'tfidf')
-
+    print("\t Vector representations Created")
+    
+    print("4. Training the model...")
+    print("\t ------------------------------------- \n \t For stem dataset \n \t -------------------------------------")
+    model_stem = TrainingAndCV(traindf_stem_tfidf, train.Sentiment, n_splits = 5)
+    print("\t ------------------------------------- \n \t For non stem dataset \n \t -------------------------------------")
+    model_nostem = TrainingAndCV(traindf_nostem_tfidf, train.Sentiment, n_splits = 5)
+    
+    print("5. Preprocess testing data...")
+    clean_test_stem, clean_test_nostem= clean(test)
+    print("\t test data cleaned")    
     testdf_stem_tfidf = transformtest(traindf_stem_tfidf, clean_test_stem, ts_vectorizer,stem_vocab_tf)
     test_nostem_tfidf = transformtest(traindf_nostem_tfidf, clean_test_nostem, tn_vectorizer, nostem_vocab_tf)
-    print("Vector representations Created")
-    
-    print("Training phase...")
-    print("------------------------------------- \n For stem dataset \n-------------------------------------")
-    TrainingAndCV(traindf_stem_tfidf, train.Sentiment, testdf_stem_tfidf, test.Sentiment, n_splits = 5)
-    print("------------------------------------- \n For non stem dataset \n-------------------------------------")
-    TrainingAndCV(traindf_nostem_tfidf, train.Sentiment, test_nostem_tfidf, test.Sentiment, n_splits = 5)
+    print("\t Vector representations for test stem and non-stem created")
+    print("6. Testing the model...")
+    print("\t ------------------------------------- \n \t For stem dataset \n \t -------------------------------------")
+    testing(model_stem, testdf_stem_tfidf, test.Sentiment)
+    print("\t ------------------------------------- \n \t For non stem dataset \n \t -------------------------------------")
+    testing(model_nostem, test_nostem_tfidf, test.Sentiment)
    
 class Feedforward(torch.nn.Module):
     def __init__(self, input_size, hidden_size):
         super(Feedforward, self).__init__()
         self.input_size = input_size
         self.hidden_size  = hidden_size
-        self.fc1 = torch.nn.Linear(self.input_size, self.hidden_size)
-        nn.init.xavier_normal_(self.fc1.weight)
-        self.fc2 = torch.nn.Linear(self.hidden_size, hidden_size)
-        nn.init.xavier_normal_(self.fc2.weight)
-        self.fc3 = torch.nn.Linear(self.hidden_size, 1)
+        self.fc1 = torch.nn.Linear(self.input_size, self.hidden_size) #linear layer(vocab_size, 20)
+        nn.init.xavier_uniform_(self.fc1.weight) #Initialize weights to random numbers chosen from uniform dist
+        self.fc2 = torch.nn.Linear(self.hidden_size, hidden_size) #Linear layer(20, 20)
+        nn.init.xavier_uniform_(self.fc2.weight) #Initialize weights to random numbers chosen from uniform dist
+        self.fc3 = torch.nn.Linear(self.hidden_size, 1) #Linear layer(20, 1)
         self.sigmoid = torch.nn.Sigmoid()
     def forward(self, x):
-        hidden1 = self.sigmoid(self.fc1(x))
-        output = self.sigmoid(self.fc2(hidden1))
-        output = self.sigmoid(self.fc3(output))
+        hidden1 = self.sigmoid(self.fc1(x)) #Sigmoid(Input layer)
+        output = self.sigmoid(self.fc2(hidden1)) #sigmoid(hidden layer)
+        output = self.sigmoid(self.fc3(output)) #sigmoid(hidden layer)
         return output
 
 
