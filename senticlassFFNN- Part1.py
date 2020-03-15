@@ -75,14 +75,10 @@ import numpy as np
 import math
 import sys, os
 import operator
-from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import accuracy_score
-import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
-from itertools import islice
 from nltk.corpus import stopwords
 import torch
 import torch.nn as nn
@@ -141,12 +137,9 @@ def get_data(path):
     # reshuffle the tweets to see both pos and neg in random order
     df = df.sample(frac=1).reset_index(drop=True)
 
-    # explore top 5 rows
-    #df.head(5)
     return df
 
 def clean(df):
-
     # Remove any markup tags (HTML), all the mentions of handles(starts with '@') and '#' character
     def cleantweettext(raw_html):
         pattern = re.compile('<.*?>')
@@ -347,8 +340,8 @@ def transformtest(refDF, testdf, invdocufreq, trainVocab):
     
     return testTFIDFdf
 
-
 '''
+
 Training method performs model building, learning parameters from train set and test on validation set
 Training runs for several epochs and different learning rates 
 '''
@@ -357,7 +350,7 @@ def train_pred(model, train_X, train_y, val_X, val_y, epochs=2, batch_size=200):
     trainloss = []
     testloss = []
     testaccuracy = []
-    lrs = [0.0001, 0.005, 0.01]
+    lrs = [0.0001, 0.05, 0.1]
     for l in lrs:            
         for e in range(epochs):
             start_time = time.time()
@@ -373,9 +366,11 @@ def train_pred(model, train_X, train_y, val_X, val_y, epochs=2, batch_size=200):
           
             model.train()
             avg_loss = 0.
-            for x_batch, y_batch in tqdm(train_loader, disable=True):
-                y_pred = model(x_batch.float()).requires_grad_(True)
-                loss = loss_fn(y_pred.squeeze(), y_batch.float().squeeze())
+            for x_batch, y_batch in train_loader:
+                X = Variable(torch.FloatTensor(x_batch))
+                y = Variable(torch.FloatTensor(y_batch))
+                y_pred = model(X)
+                loss = loss_fn(y_pred.squeeze(), y.squeeze())
                 #loss.requires_grad = True 
                 optimizer.zero_grad()
                 loss.backward()
@@ -387,10 +382,12 @@ def train_pred(model, train_X, train_y, val_X, val_y, epochs=2, batch_size=200):
             avg_val_loss = 0.
             testacc = 0
             for i, (x_batch, y_batch) in enumerate(valid_loader):
-                y_pred = model(x_batch.float()).detach()
-                avg_val_loss += loss_fn(y_pred, y_batch.float()).item() / len(valid_loader)
-                valid_preds[i * batch_size:(i+1) * batch_size] = y_pred[:, 0].data.numpy()
-                testacc += np.sum(np.round(y_pred[:, 0].data.numpy()) == y_batch.float()[:, 0].data.numpy())
+                X_val = Variable(torch.FloatTensor(x_batch))
+                y_pred_val = model(X_val)
+                avg_val_loss += loss_fn(y_pred_val, y_batch.float()).item() / len(valid_loader)
+                valid_preds[i * batch_size:(i+1) * batch_size] = y_pred_val[:, 0].data.numpy()
+                testacc += np.sum(np.round(y_pred_val[:, 0].data.numpy()) == y_batch.float()[:, 0].data.numpy())
+                
             elapsed_time = time.time() - start_time
             
             if (e % 500 == 0):  
@@ -398,7 +395,7 @@ def train_pred(model, train_X, train_y, val_X, val_y, epochs=2, batch_size=200):
             
             testloss.append(avg_val_loss)
             testaccuracy.append(testacc/ len(val_y))        
-        plt.title("plot of train,val loss and val accuracy for lr = {}".format(lr))
+        plt.title("plot of train,val loss and val accuracy for lr = {}".format(l))
         plt.plot(trainloss)
         plt.plot(testloss)
         plt.plot(testaccuracy)   
@@ -413,7 +410,7 @@ def testing(model, test_data, test_labels):
     test_X = Variable(torch.from_numpy(test_normalized_X)).float()
     
     model.eval()
-    y_pred = model(test_X.float()).detach()
+    y_pred = model(test_X.float())
     predictions = np.round(y_pred[:, 0].data.numpy())
     print("Accuracy is {}".format(np.round(np.sum(predictions == test_labels.values) / len(test_X), 2)))
     return predictions
@@ -427,7 +424,7 @@ Testing function is called and the value of test accuray is obtained
 '''
 def TrainingAndCV(train_data, train_labels, test_data, test_labels, n_splits = 2):           
     train_normalized_X = preprocessing.normalize(train_data.values[:,1:])
-    train_X = Variable(torch.from_numpy(train_normalized_X)).float()
+    train_X = torch.from_numpy(train_normalized_X).float()
     train_y = torch.from_numpy(train_labels.values.reshape((train_labels.shape[0],-1))).float()
     
     splits = list(StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=7).split(train_X, train_y))
