@@ -4,8 +4,9 @@ Description: AIT 726 Homework 2 - Part1
 Command to run the file:
 python FFNN_SentimentClassification.py [train folder location] [test folder location] 
 
-Detailed Procedure:
+Description: Sentiment Classification for Airline review tweets. Output labels have two classes: positive and negative.
 
+Detailed Procedure:
 1. import dependencies
 2. get data
     Read training data of positive and negative tweets
@@ -495,7 +496,7 @@ def TrainingAndCV(train_data, train_labels, n_splits = 2):
     train_normalized_X = preprocessing.normalize(train_data.values[:,1:])
     train_X = torch.from_numpy(train_normalized_X).float()
     train_y = torch.from_numpy(train_labels.values.reshape((train_labels.shape[0],-1))).float()
-    '''
+    
     #Initialize K fold cross validation 
     splits = list(StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=7).split(train_X, train_y))
     print("\t 4.1. K-fold cross-validation - Each k-th fold runs for different learning rates")
@@ -516,24 +517,16 @@ def TrainingAndCV(train_data, train_labels, n_splits = 2):
     print("\t On cross-validation the best parameter for learning rate was found to be ", tunedlr)
     print("\t 4.2. Run the training with entire train data and learning rate = ", tunedlr)
     #Final model training step after parameter tuning and made sure that model doesnot overfit
-    '''
-    model = training(train_X, train_y, lr= 1, epochs=1000, batch_size=400)
+    model = training(train_X, train_y, lr= tunedlr, epochs=500, batch_size=400)
     return model
 
 #Main method
 def main():
   # Reading data
-  '''
   print("1. Reading data...")
   train= get_data(sys.argv[1])
   test= get_data(sys.argv[2])
-  '''
-  import os
-  os.chdir("D:\\Spring 2020\\assignments\\senticlassFFNL-master\\senticlassFFNL")
-    # print command line arguments
-  print("1. Reading data...")
-  train= get_data("tweet\\train") #get_data(sys.argv[1])
-  test= get_data("tweet\\test")  #get_data(sys.argv[2])
+  
   #Cleaning data - tokenize+clean+stem
   print("2. Cleaning data...")
   
@@ -566,18 +559,9 @@ def main():
   #Testing the model
   print("6. Testing the model...")
   print("\t ------------------------------------- \n \t For stem dataset \n \t -------------------------------------")
-  y_stem_preds = testing(model_stem, testdf_stem_tfidf, test.Sentiment)
+  testing(model_stem, testdf_stem_tfidf, test.Sentiment)
   print("\t ------------------------------------- \n \t For non stem dataset \n \t -------------------------------------")
-  y_nostem_preds = testing(model_nostem, test_nostem_tfidf, test.Sentiment)
-  
-  sys.stdout = open("D:\\Spring 2020\\assignments\\senticlassFFNL-master\\senticlassFFNL\\FFNN_Part1_results\\SentimentClass_FFNN_predictions.txt", "w")
-  print("Output predictions")
-  print("*************************Stem data*****************************")
-  print(list(y_stem_preds.astype(int)))
-  print("*************************No Stem data*****************************")
-  print(list(y_nostem_preds.astype(int)))
-    
-    
+  testing(model_nostem, test_nostem_tfidf, test.Sentiment)
 
 if __name__ == "__main__":
     main() 
